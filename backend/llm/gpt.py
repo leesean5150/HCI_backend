@@ -1,0 +1,1 @@
+# create singleton of openai client here

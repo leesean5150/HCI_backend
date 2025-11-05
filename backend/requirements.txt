@@ -1,0 +1,7 @@
+fastapi==0.112.2
+fastapi-cli==0.0.5
+psycopg==3.1.19
+psycopg-binary==3.1.19
+pydantic==2.8.2
+pydantic-settings==2.4.0
+pytest==8.3.2
