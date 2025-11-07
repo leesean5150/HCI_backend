@@ -2,6 +2,7 @@ from pydantic import field_validator, PostgresDsn, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
+
 class Settings(BaseSettings):
     """
     use pydantic settings for parsing environment file
