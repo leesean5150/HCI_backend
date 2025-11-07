@@ -1,5 +1,4 @@
 from psycopg import AsyncConnection
-from typing import Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from db.postgres import get_async_session
@@ -17,7 +16,7 @@ router = APIRouter()
         status.HTTP_400_BAD_REQUEST: {"description": "Bad request"},
     },
 )
-async def get_documents(conn: AsyncConnection = Depends(get_async_session)):
+async def get_expenditure(conn: AsyncConnection = Depends(get_async_session)):
     """
     Get all expenditures from the database
     """
@@ -41,7 +40,7 @@ async def get_documents(conn: AsyncConnection = Depends(get_async_session)):
         status.HTTP_500_INTERNAL_SERVER_ERROR: {"description": "Database or unexpected server error"},
     },
 )
-async def get_documents(
+async def create_expenditure(
     expenditure: schema.ExpenditureModel,
     conn: AsyncConnection = Depends(get_async_session)
 ):
@@ -49,7 +48,7 @@ async def get_documents(
     Create a new expenditure to the database
     """
     try:
-        response = await handlers.create_expenditure(expenditure, conn)
+        response = await handlers.create_expenditure(expenditure=expenditure, conn=conn)
         return response
 
     except HTTPException as e:

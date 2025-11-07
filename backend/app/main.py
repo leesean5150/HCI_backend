@@ -1,9 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from psycopg import AsyncConnection
-from config import settings
+from openai import OpenAI
 
 from app.api.router import router
+from config import settings
+
 
 app = FastAPI(root_path="/api")
 
@@ -16,7 +18,7 @@ app.add_middleware(
 )
 
 @app.on_event("startup")
-async def on_startup():
+async def database_setup():
     """
     on start up of the application, check for the existence of the files table and create it if it
     does no exist.
@@ -55,6 +57,23 @@ async def on_startup():
         await conn.close()
     except Exception as e:
         print(f"Error checking or creating table: {e}")
+
+@app.on_event("startup")
+async def client_setup():
+    """
+    on start up of the application, initialize openai client
+    """
+    try:
+        client = OpenAI()
+        app.state.openai_client = client
+        print("OpenAI client initialized and attached to app state: openai_client")
+    except Exception as e:
+        print(f"CRITICAL: Failed to initialize OpenAI client: {e}")
+
+@app.on_event("shutdown")
+async def shutdown_openai_client():
+    if hasattr(app.state, 'openai_client'):
+        del app.state.openai_client
 
 def swagger_ui_parameters():
     return {
