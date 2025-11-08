@@ -6,5 +6,5 @@ psycopg==3.2.12
 pydantic-settings==2.4.0
 pydantic==2.8.2
 pytest==8.3.2
-passlib[bcrypt]==1.7.4
+bcrypt==4.1.2
 pydantic[email]==2.8.2

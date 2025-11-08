@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from psycopg import AsyncConnection
 from pydantic import EmailStr
+import datetime as datetime
 
 from db.postgres import get_async_session
 from . import schema
@@ -41,7 +42,7 @@ async def create_user(conn, user_data: UserModel):
                 )
             )
             new_user = await cur.fetchone()
-            await conn.commit()
+            
             return new_user
             
     except Exception as e:
@@ -56,9 +57,18 @@ async def add_authentication_to_user(conn, auth_data: schema.AddAuthenticationRe
     Add email and password to an existing offline user account
     (Upgrading from offline to online mode)
     """
-    from passlib.context import CryptContext
-    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-    hashed_password = pwd_context.hash(auth_data.password)
+    import bcrypt
+    
+    # Validate password length for bcrypt (max 72 bytes)
+    password_bytes = auth_data.password.encode('utf-8')
+    if len(password_bytes) > 72:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password cannot be longer than 72 bytes."
+        )
+    
+    # Hash the password
+    hashed_password = bcrypt.hashpw(password_bytes, bcrypt.gensalt()).decode('utf-8')
     
     try:
         async with conn.cursor() as cur:
@@ -99,8 +109,12 @@ async def add_authentication_to_user(conn, auth_data: schema.AddAuthenticationRe
             """
             await cur.execute(update_query, (auth_data.email, hashed_password, auth_data.username))
             updated_user = await cur.fetchone()
-            await conn.commit()
             
+            if not updated_user:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to update user."
+                )
             return {
                 "uuid": updated_user['uuid'],
                 "username": updated_user['username'],
@@ -119,23 +133,121 @@ async def add_authentication_to_user(conn, auth_data: schema.AddAuthenticationRe
         )
 
 
-async def get_user(conn, user_data: UserModel):
+async def get_user(conn, username: str):
     """
     get a user from the database
     """
-    # Implementation goes here
-    pass
+    try:
+        async with conn.cursor() as cur:
+            query = """
+            SELECT uuid, username, full_name, email, created, updated
+            FROM users
+            WHERE username = %s;
+            """
+            await cur.execute(query, (username,))
+            user = await cur.fetchone()
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found."
+                )
+            return user
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error: {str(e)}"
+        )
 
-async def update_user(conn, user_data: UserModel):
+async def update_user(conn, cur_username: str, update_data: schema.UserUpdateRequest):
     """
     update an existing user in the database
     """
-    # Implementation goes here
-    pass
+    try:
+        async with conn.cursor() as cur:
+            check_query = "SELECT COUNT(*) FROM users WHERE username = %s;"
+            await cur.execute(check_query, (cur_username,))
+            result = await cur.fetchone()
+            if result['count'] == 0: 
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found."
+                )
+            
+            if (update_data.username) and (update_data.username != cur_username):
+                check_new_username_query = "SELECT COUNT(*) FROM users WHERE username = %s;"
+                await cur.execute(check_new_username_query, (update_data.username,))
+                result = await cur.fetchone()
+                if result['count'] > 0:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="New username already exists."
+                    )
+            
+            update_parts = []
+            params = []
+            
+            if update_data.username:
+                update_parts.append("username = %s")
+                params.append(update_data.username)
+            
+            if update_data.full_name is not None:
+                update_parts.append("full_name = %s")
+                params.append(update_data.full_name)
+            
+            if not update_parts:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No fields to update."
+                )
+            
+            update_parts.append("updated = NOW()")
+            params.append(cur_username) 
+            
+            update_query = f"""
+            UPDATE users
+            SET {', '.join(update_parts)}
+            WHERE username = %s
+            RETURNING uuid, username, full_name, email, created, updated;
+            """
+            
+            await cur.execute(update_query, params)
+            updated_user = await cur.fetchone()
+            
+            return updated_user
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error: {str(e)}"
+        )
 
-async def export_user_data(conn):
+async def delete_user(conn, username: str):
     """
-    export user data from the database
+    delete a user from the database
     """
-    # Implementation goes here
-    pass
+    try:
+        async with conn.cursor() as cur:
+            delete_query = "DELETE FROM users WHERE username = %s RETURNING uuid;"
+            await cur.execute(delete_query, (username,))
+            deleted_user = await cur.fetchone()
+            
+            if not deleted_user:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found."
+                )
+    
+            
+            return {"message": "User deleted successfully.", "uuid": deleted_user['uuid']}
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error: {str(e)}"
+        )

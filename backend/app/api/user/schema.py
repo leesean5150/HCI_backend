@@ -23,6 +23,11 @@ class AddAuthenticationRequest(BaseModel):
     email: EmailStr = Field(description="Email for online mode.")
     password: str = Field(min_length=8, description="Required password for authentication.")
 
+#for updating user profile
+class UserUpdateRequest(BaseModel):
+    username: Optional[str] = Field(None, max_length=150, description="New username (optional)")
+    full_name: Optional[str] = Field(None, max_length=255, description="Updated full name (optional)")
+
 #for storing user in the database  
 class UserInDB(UserBase):
     email: EmailStr
