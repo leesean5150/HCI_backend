@@ -6,3 +6,4 @@ psycopg==3.1.19
 pydantic-settings==2.4.0
 pydantic==2.8.2
 pytest==8.3.2
+python-multipart==0.0.20
