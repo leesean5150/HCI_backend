@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     POSTGRES_PORT: int 
     POSTGRES_DB: str
     
+    # JWT Settings for authentication
+    JWT_SECRET_KEY: str  
+    JWT_ALGORITHM: str 
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int 
+    
     DATABASE_URL: Optional[PostgresDsn] = None
     # OPENAI_API: str
 
