@@ -8,23 +8,24 @@ from . import schema
 router = APIRouter()
 
 async def get_expenditures(
+    current_user: dict,
     conn: AsyncConnection = Depends(get_async_session)
 ):
     """
-    get all expenditures from the database
+    Get all expenditures for the authenticated user from the database
     """
 
     try:
         query = """
-            SELECT *
+            SELECT uuid, name, created_at, date_of_expense, amount, category, notes, status
             FROM expenditure
+            WHERE user_uuid = %s
             ORDER BY created_at DESC
         """
 
         async with conn.cursor() as cur:
-            await cur.execute(query)
+            await cur.execute(query, (current_user['uuid'],))
             results = await cur.fetchall()
-            print(results)
             return results
             
     except Exception as e:
@@ -86,14 +87,16 @@ async def get_pending_expenditures(
         ) 
     
 async def create_expenditure(
+    current_user: dict,
     expenditure: schema.ExpenditureModel,
     conn: AsyncConnection = Depends(get_async_session)
 ):
     """
-    create a new expenditure in the database
+    Create a new expenditure for the authenticated user in the database
     """
     query = """
         INSERT INTO expenditure (
+            user_uuid,
             name, 
             date_of_expense, 
             amount, 
@@ -101,12 +104,13 @@ async def create_expenditure(
             notes, 
             status
         ) VALUES (
-            %s, %s, %s, %s, %s, %s
+            %s, %s, %s, %s, %s, %s, %s
         )
         RETURNING uuid, created_at;
     """
     
     values = (
+        current_user['uuid'], 
         expenditure.name,
         expenditure.date_of_expense,
         expenditure.amount,

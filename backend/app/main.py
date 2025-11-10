@@ -34,6 +34,7 @@ async def database_setup():
     create_table_query = """
     CREATE TABLE expenditure (
         uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_uuid UUID NOT NULL REFERENCES users(uuid) ON DELETE CASCADE,
         name VARCHAR(255) NOT NULL,
         created_at TIMESTAMPTZ DEFAULT NOW(),
         date_of_expense DATE NOT NULL,
@@ -43,9 +44,39 @@ async def database_setup():
         status VARCHAR(20) DEFAULT 'Pending'
     );
     """
+    query_user_table = """
+    SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.tables 
+        WHERE table_name = 'users'
+    );
+    """
+    create_user_table_query ="""
+    CREATE TABLE users (
+        uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        username VARCHAR(150) NOT NULL,
+        full_name VARCHAR(255),
+        email VARCHAR(255) UNIQUE,
+        hashed_password VARCHAR(255),
+        created TIMESTAMPTZ DEFAULT NOW(),
+        updated TIMESTAMPTZ DEFAULT NOW()
+    );
+    """
+
     try:
         conn = await AsyncConnection.connect(str(settings.DATABASE_URL), autocommit=True)
         async with conn.cursor() as cur:
+
+            await cur.execute(query_user_table)
+            result = await cur.fetchone()
+            if not result[0]:
+                await cur.execute(create_user_table_query)
+                await conn.commit()
+                print("Table 'users' created.")
+            else:
+                print("Table 'users' already exists.")
+            
+
             await cur.execute(query)
             result = await cur.fetchone()
             if not result[0]:
@@ -54,6 +85,7 @@ async def database_setup():
                 print("Table 'expenditure' created.")
             else:
                 print("Table 'expenditure' already exists.")
+                
         await conn.close()
     except Exception as e:
         print(f"Error checking or creating table: {e}")
