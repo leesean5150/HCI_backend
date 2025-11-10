@@ -20,8 +20,8 @@ app.add_middleware(
 @app.on_event("startup")
 async def database_setup():
     """
-    on start up of the application, check for the existence of the files table and create it if it
-    does no exist.
+    on start up of the application, check for the existence of the required tables and create it if it
+    does not exist.
     """
 
     query = """
@@ -56,10 +56,13 @@ async def database_setup():
         uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         username VARCHAR(150) NOT NULL,
         full_name VARCHAR(255),
-        email VARCHAR(255) UNIQUE,
+        email VARCHAR(255),
         hashed_password VARCHAR(255),
         created TIMESTAMPTZ DEFAULT NOW(),
-        updated TIMESTAMPTZ DEFAULT NOW()
+        updated TIMESTAMPTZ DEFAULT NOW(),
+
+        CONSTRAINT users_username_key UNIQUE (username),
+        CONSTRAINT users_email_key UNIQUE (email)
     );
     """
 

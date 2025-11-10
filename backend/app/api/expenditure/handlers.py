@@ -1,20 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import HTTPException, status
 from psycopg import AsyncConnection
 
-from db.postgres import get_async_session
 from . import schema
 
-
-router = APIRouter()
+UPDATABLE_FIELDS = {
+    "name", "date_of_expense", "amount", 
+    "category", "notes", "status"
+}
 
 async def get_expenditures(
     current_user: dict,
-    conn: AsyncConnection = Depends(get_async_session)
+    conn: AsyncConnection
 ):
     """
     Get all expenditures for the authenticated user from the database
     """
-
     try:
         query = """
             SELECT uuid, name, created_at, date_of_expense, amount, category, notes, status
@@ -29,13 +29,11 @@ async def get_expenditures(
             return results
             
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: {str(e)}"
-        )
-    
+        raise e
+
 async def get_approved_expenditures(
-    conn: AsyncConnection = Depends(get_async_session)
+    current_user: dict,
+    conn: AsyncConnection
 ):
     """
     get all expenditures that have status == 'Appproved' from the database
@@ -44,24 +42,21 @@ async def get_approved_expenditures(
         query = """
             SELECT *
             FROM expenditure
-            WHERE status='Approved'
+            WHERE status='Approved' AND user_uuid = %s
             ORDER BY created_at DESC
         """
 
         async with conn.cursor() as cur:
-            await cur.execute(query)
+            await cur.execute(query, (current_user['uuid'],))
             results = await cur.fetchall()
-            print(results)
             return results
             
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: {str(e)}"
-        ) 
+        raise e
     
 async def get_pending_expenditures(
-    conn: AsyncConnection = Depends(get_async_session)
+    current_user: dict,
+    conn: AsyncConnection
 ):
     """
     get all expenditures that have status == 'Pending' from the database
@@ -70,26 +65,22 @@ async def get_pending_expenditures(
         query = """
             SELECT *
             FROM expenditure
-            WHERE status='Pending'
+            WHERE status='Pending' AND user_uuid = %s
             ORDER BY created_at DESC
         """
 
         async with conn.cursor() as cur:
-            await cur.execute(query)
+            await cur.execute(query, (current_user['uuid'],))
             results = await cur.fetchall()
-            print(results)
             return results
             
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: {str(e)}"
-        ) 
+        raise e
     
 async def create_expenditure(
     current_user: dict,
     expenditure: schema.ExpenditureModel,
-    conn: AsyncConnection = Depends(get_async_session)
+    conn: AsyncConnection
 ):
     """
     Create a new expenditure for the authenticated user in the database
@@ -124,18 +115,28 @@ async def create_expenditure(
             await cur.execute(query, values)
             
             returned_data = await cur.fetchone()
+        
+        await conn.commit()
             
         return {**expenditure.model_dump(), **returned_data}
 
+    except HTTPException:
+        await conn.rollback()
+        raise
+        
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: Could not create expenditure record. Details: {str(e)}"
-        )
+        await conn.rollback()
+        raise e
     
-async def update_expenditure_by_id(id: str, data: schema.ExpenditureUpdateModel, conn: AsyncConnection):
+async def update_expenditure_by_id(
+    id: str, 
+    data: schema.ExpenditureUpdateModel,
+    current_user: dict,
+    conn: AsyncConnection
+):
     """
-    Handler to dynamically update an expenditure by its ID. Only updates fields that are not None in the data.
+    Handler to dynamically update an expenditure by its ID. 
+    This is now secure against SQL injection.
     """
     
     update_data = data.model_dump(exclude_unset=True)
@@ -149,21 +150,29 @@ async def update_expenditure_by_id(id: str, data: schema.ExpenditureUpdateModel,
     set_parts = []
     values = []
     
-    for i, (key, value) in enumerate(update_data.items()):
-        set_parts.append(f"{key} = %s")
-        values.append(value)
-    
+    for key, value in update_data.items():
+        if key in UPDATABLE_FIELDS:
+            set_parts.append(f"{key} = %s")
+            values.append(value)
+        else:
+            pass
+
+    if not set_parts:
+         raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No valid fields to update were provided."
+        )
+
     set_clause = ", ".join(set_parts)
 
     values.append(id)
+    values.append(current_user['uuid'])
     values_tuple = tuple(values)
     
-    # 3. Build the full query
-    # Assuming your ID column is 'uuid'
     query = f"""
         UPDATE expenditure
         SET {set_clause}
-        WHERE uuid = %s
+        WHERE uuid = %s AND user_uuid = %s
         RETURNING uuid, name, status, amount, category, date_of_expense, notes;
     """
 
@@ -176,11 +185,10 @@ async def update_expenditure_by_id(id: str, data: schema.ExpenditureUpdateModel,
                 await conn.rollback()
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Expenditure with ID '{id}' not found."
+                    detail=f"Expenditure with ID '{id}' not found or you do not have permission."
                 )
 
         await conn.commit()
-
         return updated_row
 
     except HTTPException as e:
@@ -188,14 +196,12 @@ async def update_expenditure_by_id(id: str, data: schema.ExpenditureUpdateModel,
 
     except Exception as e:
         await conn.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: Could not update expenditure. Details: {str(e)}"
-        )
+        raise e
     
 async def approve_single_pending_expenditure(
     id: str,
-    conn: AsyncConnection = Depends(get_async_session)
+    current_user: dict,
+    conn: AsyncConnection
 ):
     """
     Handler to update a single expenditure's status to 'Approved'.
@@ -203,10 +209,10 @@ async def approve_single_pending_expenditure(
     query = """
         UPDATE expenditure
         SET status = 'Approved'
-        WHERE uuid = %s AND status = 'Pending'
+        WHERE uuid = %s AND status = 'Pending' AND user_uuid = %s
         RETURNING uuid, name, status, amount, category, date_of_expense, notes
     """
-    values = (id,)
+    values = (id, current_user['uuid'])
 
     try:
         async with conn.cursor() as cur:
@@ -217,7 +223,7 @@ async def approve_single_pending_expenditure(
                 await conn.rollback() 
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"No pending expenditure with ID '{id}' found to approve."
+                    detail=f"No pending expenditure with ID '{id}' found to approve or you do not have permission."
                 )
             
         await conn.commit()
@@ -228,23 +234,23 @@ async def approve_single_pending_expenditure(
 
     except Exception as e:
         await conn.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: Could not approve expenditure. Details: {str(e)}"
-        )
+        raise e
 
 async def approve_all_pending_expenditures(
-    conn: AsyncConnection = Depends(get_async_session)
+    current_user: dict,
+    conn: AsyncConnection
 ):
+    """ Approves all pending expenditures for the current user. """
     query = """
         UPDATE expenditure
         SET status = 'Approved'
-        WHERE status = 'Pending'
+        WHERE status = 'Pending' AND user_uuid = %s
     """
+    values = (current_user['uuid'],)
 
     try:
         async with conn.cursor() as cur:
-            await cur.execute(query)
+            await cur.execute(query, values)
             updated_count = cur.rowcount
 
         await conn.commit()
@@ -253,17 +259,19 @@ async def approve_all_pending_expenditures(
     
     except Exception as e:
         await conn.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: Could not approve expenditure. Details: {str(e)}"
-        )
+        raise e
     
-async def delete_expenditure_by_id(id: str, conn: AsyncConnection):
+async def delete_expenditure_by_id(
+    id: str,
+    current_user: dict,
+    conn: AsyncConnection
+):
     """
-    Handler to delete a single expenditure by its ID
+    Handler to delete a single expenditure by its ID.
+    Ensures the expenditure belongs to the current user.
     """
-    query = "DELETE FROM expenditure WHERE uuid = %s;"
-    values = (id,)
+    query = "DELETE FROM expenditure WHERE uuid = %s AND user_uuid = %s;"
+    values = (id, current_user['uuid'])
 
     try:
         async with conn.cursor() as cur:
@@ -275,7 +283,7 @@ async def delete_expenditure_by_id(id: str, conn: AsyncConnection):
                 await conn.rollback()
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Expenditure with ID '{id}' not found."
+                    detail=f"Expenditure with ID '{id}' not found or you do not have permission."
                 )
 
         await conn.commit()
@@ -287,7 +295,4 @@ async def delete_expenditure_by_id(id: str, conn: AsyncConnection):
 
     except Exception as e:
         await conn.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: Could not delete expenditure. Details: {str(e)}"
-        )
+        raise e

@@ -12,7 +12,6 @@ async def get_async_session() -> AsyncGenerator[AsyncConnection, None]:
     
     conn = await AsyncConnection.connect(
         conninfo=str(settings.DATABASE_URL),
-        autocommit=True,
         row_factory=dict_row,
     )
     try:

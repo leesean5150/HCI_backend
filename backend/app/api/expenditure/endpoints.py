@@ -44,12 +44,14 @@ async def get_expenditure(
         status.HTTP_400_BAD_REQUEST: {"description": "Bad request"},
     },
 )
-async def get_approved_expenditures(conn: AsyncConnection = Depends(get_async_session)):
+async def get_approved_expenditures(
+    current_user: dict = Depends(auth.get_current_user), 
+    conn: AsyncConnection = Depends(get_async_session)):
     """
     Get all approved expenditures from the database
     """
     try:
-        response = await handlers.get_approved_expenditures(conn)
+        response = await handlers.get_approved_expenditures(current_user, conn)
         return response
     except HTTPException as e:
         raise e
@@ -67,12 +69,14 @@ async def get_approved_expenditures(conn: AsyncConnection = Depends(get_async_se
         status.HTTP_400_BAD_REQUEST: {"description": "Bad request"},
     },
 )
-async def get_pending_expenditures(conn: AsyncConnection = Depends(get_async_session)):
+async def get_pending_expenditures(
+    current_user: dict = Depends(auth.get_current_user),
+    conn: AsyncConnection = Depends(get_async_session)):
     """
     Get all pending expenditures from the database
     """
     try:
-        response = await handlers.get_pending_expenditures(conn)
+        response = await handlers.get_pending_expenditures(current_user, conn)
         return response
     except HTTPException as e:
         raise e
@@ -125,7 +129,8 @@ async def create_expenditure(
 )
 async def update_single_expenditure(
     id: str,
-    expenditure_data: schema.ExpenditureUpdateModel, 
+    expenditure_data: schema.ExpenditureUpdateModel,
+    current_user: dict = Depends(auth.get_current_user),
     conn: AsyncConnection = Depends(get_async_session)
 ):
     """
@@ -135,7 +140,8 @@ async def update_single_expenditure(
     try:
         response = await handlers.update_expenditure_by_id(
             id=id, 
-            data=expenditure_data, 
+            data=expenditure_data,
+            current_user=current_user,
             conn=conn
         )
         return response
@@ -151,7 +157,7 @@ async def update_single_expenditure(
         )
     
 @router.patch(
-    "/expenditure/approve/{id}",
+    "/approve/{id}",
     status_code=status.HTTP_200_OK,
     responses={
         status.HTTP_200_OK: {"description": "Expenditure approved successfully"},
@@ -161,13 +167,14 @@ async def update_single_expenditure(
 )
 async def approve_single_pending_expenditure(
     id: str,
+    current_user: dict = Depends(auth.get_current_user),
     conn: AsyncConnection = Depends(get_async_session)
 ):
     """
     Finds and approves a single 'Pending' expenditure by its ID.
     """
     try:
-        response = await handlers.approve_single_pending_expenditure(id=id, conn=conn)
+        response = await handlers.approve_single_pending_expenditure(id=id, current_user=current_user, conn=conn)
         return response
 
     except HTTPException as e:
@@ -179,8 +186,8 @@ async def approve_single_pending_expenditure(
             detail=f"Server failed to approve expenditure: {str(e)}. Please try again.",
         )
 
-@router.patch(
-    "/expenditure/approve",
+@router.post(
+    "/approve",
     status_code=status.HTTP_200_OK,
     responses={
         status.HTTP_200_OK: {"description": "All pending expenditures approved. Returns a count."},
@@ -188,13 +195,14 @@ async def approve_single_pending_expenditure(
     },
 )
 async def approve_all_pending_expenditures(
+    current_user: dict = Depends(auth.get_current_user),
     conn: AsyncConnection = Depends(get_async_session)
 ):
     """
     Finds and approves all 'Pending' expenditures.
     """
     try:
-        response = await handlers.approve_all_pending_expenditures(conn=conn)
+        response = await handlers.approve_all_pending_expenditures(current_user=current_user, conn=conn)
         return response
 
     except HTTPException as e:
@@ -207,7 +215,7 @@ async def approve_all_pending_expenditures(
         )
     
 @router.delete(
-    "/expenditure/{id}",
+    "/{id}",
     status_code=status.HTTP_200_OK,
     responses={
         status.HTTP_200_OK: {"description": "Expenditure deleted successfully"},
@@ -217,13 +225,14 @@ async def approve_all_pending_expenditures(
 )
 async def delete_expenditure_by_id(
     id: str,
+    current_user: dict = Depends(auth.get_current_user),
     conn: AsyncConnection = Depends(get_async_session)       
 ):
     """
     Deletes an expenditure by its ID
     """
     try:
-        response = await handlers.delete_expenditure_by_id(id=id, conn=conn)
+        response = await handlers.delete_expenditure_by_id(id=id, current_user=current_user, conn=conn)
         return response
     
     except HTTPException as e:

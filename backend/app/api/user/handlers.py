@@ -1,72 +1,25 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from psycopg import AsyncConnection
-from pydantic import EmailStr
+from fastapi import HTTPException, status
+from psycopg import AsyncConnection, errors as psycopg_errors
 import datetime as datetime
 
 from db.postgres import get_async_session
 from app.auth import hash_password, verify_password, create_access_token
 from . import schema
 
-router = APIRouter()
-
-######### HELPER FUNCTIONS CAUSE I FAKING TYPE THIS A FEW TIME ############
-async def check_username_exists(cur, username: str) -> bool:
-    """
-    Check for existing username in the database, returns True if exists, False otherwise
-    """
-    check_query = "SELECT COUNT(*) FROM users WHERE username = %s;"
-    await cur.execute(check_query, (username,))
-    result = await cur.fetchone()
-    return result['count'] > 0
-
-async def check_email_exists(cur, email: str) -> bool:
-    """
-    Check to  see if email alreday exists in the database, returns True if exists, False otherwise
-    """
-    check_query = "SELECT COUNT(*) FROM users WHERE email = %s;"
-    await cur.execute(check_query, (email,))
-    result = await cur.fetchone()
-    return result['count'] > 0
-
-async def get_user_by_username(cur, username: str):
-    """
-    Fetch a user from the database by username
-    Returns user dict or None if not found
-    """
-    query = """
-    SELECT uuid, username, full_name, email, created, updated
-    FROM users
-    WHERE username = %s;
-    """
-    await cur.execute(query, (username,))
-    return await cur.fetchone()
-
-
 async def create_user(conn, user_data: schema.UserRegisterRequest):
     """
-    create a new user in the database (offline mode, no authentication)
+    create a new user in the database
     """
+    hashed_password = hash_password(user_data.password)
+    
+    insert_query = """
+    INSERT INTO users (username, full_name, email, hashed_password)
+    VALUES(%s, %s, %s, %s)
+    RETURNING uuid, username, full_name, email, created, updated;
+    """
+    
     try:
         async with conn.cursor() as cur:
-            if await check_username_exists(cur, user_data.username):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Username already exists."
-                )
-            
-            if await check_email_exists(cur, user_data.email):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Email already exists."
-                )
-            
-            hashed_password = hash_password(user_data.password)
-            
-            insert_query = """
-            INSERT INTO users (username, full_name, email, hashed_password)
-            VALUES(%s, %s, %s, %s)
-            RETURNING uuid, username, full_name, email, created, updated;
-            """
             await cur.execute(
                 insert_query,
                 (
@@ -77,12 +30,27 @@ async def create_user(conn, user_data: schema.UserRegisterRequest):
                 )
             )
             new_user = await cur.fetchone()
+        
+        await conn.commit() 
+        return new_user
+        
+    except psycopg_errors.UniqueViolation as e:
+        await conn.rollback()
+        
+        if "users_username_key" in str(e).lower():
+            detail = "Username already exists."
+        elif "users_email_key" in str(e).lower():
+            detail = "Email already exists."
+        else:
+            detail = "A unique value (username or email) already exists."
             
-            return new_user
-            
-    except HTTPException:
-        raise
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=detail
+        )
+
     except Exception as e:
+        await conn.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Database error: {str(e)}"
@@ -141,21 +109,6 @@ async def update_user(conn, current_user: dict, update_data: schema.UserUpdateRe
         async with conn.cursor() as cur:
             cur_username = current_user['username']
             
-            
-            if update_data.username and update_data.username != cur_username:
-                if await check_username_exists(cur, update_data.username):
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="New username already exists."
-                    )
-            
-            if update_data.email and update_data.email != current_user.get('email'):
-                if await check_email_exists(cur, update_data.email):
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Email already in use."
-                    )
-            
             update_parts = []
             params = []
             
@@ -194,12 +147,34 @@ async def update_user(conn, current_user: dict, update_data: schema.UserUpdateRe
             
             await cur.execute(update_query, params)
             updated_user = await cur.fetchone()
+
+            if not updated_user:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
             
-            return updated_user
+        await conn.commit()
+        return updated_user
             
+    except psycopg_errors.UniqueViolation as e:
+        await conn.rollback()
+        
+        if "users_username_key" in str(e).lower():
+            detail = "New username already exists."
+        elif "users_email_key" in str(e).lower():
+            detail = "Email already in use."
+        else:
+            detail = "A unique value (username or email) already exists."
+            
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=detail
+        )
+    
     except HTTPException:
+        await conn.rollback()
         raise
+        
     except Exception as e:
+        await conn.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Database error: {str(e)}"
@@ -219,13 +194,19 @@ async def delete_user(conn, current_user: dict):
             
             if not deleted_user:
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
+                    status_code=status.HTTP_44_NOT_FOUND,
                     detail="User not found."
                 )
+            
+            await conn.commit()
             return {"message": "User deleted successfully.", "uuid": deleted_user['uuid']}
+
     except HTTPException:
+        await conn.rollback()
         raise
+
     except Exception as e:
+        await conn.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Database error: {str(e)}"
