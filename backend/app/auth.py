@@ -80,6 +80,8 @@ async def get_current_user(
             algorithms=[settings.JWT_ALGORITHM]
         )
         username: str = payload.get("sub")
+        token_version: int = payload.get("token_version")
+        
         if username is None:
             raise credentials_exception
             
@@ -92,11 +94,11 @@ async def get_current_user(
     except jwt.JWTError:
         raise credentials_exception
     
-    # Get user from database
+    # Get user from database and verify token version
     try:
         async with conn.cursor() as cur:
             query = """
-            SELECT uuid, username, full_name, email, created, updated
+            SELECT uuid, username, full_name, email, token_version, created, updated
             FROM users
             WHERE username = %s AND email IS NOT NULL AND hashed_password IS NOT NULL;
             """
@@ -105,9 +107,18 @@ async def get_current_user(
             
             if user is None:
                 raise credentials_exception
+            
+            if token_version is not None and user.get('token_version') != token_version:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token has been revoked. Please login again.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
                 
             return user
             
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
