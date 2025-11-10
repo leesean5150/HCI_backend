@@ -58,12 +58,13 @@ async def create_user(conn, user_data: schema.UserRegisterRequest):
         
 async def login_user(conn, login_data: schema.UserLoginRequest):
     """
-    authenticate user and return JWT token
+    Authenticate user and return JWT token with token_version embedded.
+    Token version allows invalidation of all tokens on logout.
     """
     try:
         async with conn.cursor() as cur:
             query = """
-            SELECT uuid, username, full_name, email, hashed_password, created, updated
+            SELECT uuid, username, full_name, email, hashed_password, token_version, created, updated
             FROM users
             WHERE username = %s AND email IS NOT NULL AND hashed_password IS NOT NULL;
             """
@@ -75,8 +76,13 @@ async def login_user(conn, login_data: schema.UserLoginRequest):
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid username or password."
                 )
-            
-            access_token = create_access_token(data={"sub": user['username']})
+
+            access_token = create_access_token(
+                data={
+                    "sub": user['username'],
+                    "token_version": user.get('token_version', 1)
+                }
+            )
             
             user_response = schema.UserResponse(
                 uuid=user['uuid'],
@@ -96,6 +102,38 @@ async def login_user(conn, login_data: schema.UserLoginRequest):
     except HTTPException:
         raise
     except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error: {str(e)}"
+        )
+        
+async def logout_user(conn, current_user: dict):
+    """logout the current user by incrementing their token version"""
+    try:
+        async with conn.cursor() as cur:
+            update_query = """
+            UPDATE users
+            SET token_version = token_version + 1, updated = NOW()
+            WHERE uuid = %s
+            RETURNING username, token_version;
+            """
+            
+            await cur.execute(update_query, (current_user['uuid'],))
+            updated_user = await cur.fetchone()
+
+            if not updated_user:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+            
+        await conn.commit()
+        return {
+            "message": "User logged out successfully. All tokens invalidated.",
+            "username": updated_user['username']
+        }
+    except HTTPException:
+        await conn.rollback()
+        raise
+    except Exception as e:
+        await conn.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Database error: {str(e)}"
@@ -194,7 +232,7 @@ async def delete_user(conn, current_user: dict):
             
             if not deleted_user:
                 raise HTTPException(
-                    status_code=status.HTTP_44_NOT_FOUND,
+                    status_code=status.HTTP_404_NOT_FOUND,
                     detail="User not found."
                 )
             
@@ -224,3 +262,22 @@ async def get_current_user_profile(current_user: dict):
         created=current_user['created'],
         updated=current_user['updated']
     )
+
+async def get_all_users(conn):
+    """
+    Retrieve all users from the database
+    """
+    try:
+        async with conn.cursor() as cur:
+            query = """
+            SELECT uuid, username, full_name, email, created, updated
+            FROM users;
+            """
+            await cur.execute(query)
+            users = await cur.fetchall()
+            return users
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error: {str(e)}"
+        )
