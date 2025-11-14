@@ -54,3 +54,54 @@
     }
   ]
 }
+
+```testing chat history and edit capabilities```
+{
+  "chat_history": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "mcdonald's $10 and shirt for $50"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "Added 2 expenses: McDonald's - $10 (Food) on 2025-11-14; Shirt - $50 (Clothing) on 2025-11-14."
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "coffee for $3 yesterday"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "Added 1 expense: Coffee - $3 (Beverages) on 2025-11-13. Summary so far: McDonald's - $10 (Food) on 2025-11-14; Shirt - $50 (Clothing) on 2025-11-14; Coffee - $3 (Beverages) on 2025-11-13.."
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "remove expense for shirt"
+        }
+      ]
+    }
+  ]
+}

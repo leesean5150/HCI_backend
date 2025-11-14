@@ -9,26 +9,34 @@ from openai import (
     APIError
 )
 import json
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from llm.gpt import get_openai_client
 from . import schema
 
+sgt_zone = ZoneInfo("Asia/Singapore") 
+now_in_sgt = datetime.now(sgt_zone)
+current_date_sgt = now_in_sgt.strftime("%Y-%m-%d")
 
-system_prompt = """You are an expert in extracting expense details. You can extract multiple expenses if the user query provides it, and you should add them into the expense list. For images, you should combine the expenses into one expense unless otherwise stated by the user.
+system_prompt = f"The current date is {current_date_sgt}" + """You are an expert in extracting expense details. You can extract multiple expenses if the user query provides it, and you should add them into the expense list. For images, you should combine the expenses into one expense unless otherwise stated by the user.
+For the expense date, use the current date unless the user explicitly states a date. Your response should summarise the expenses across the caht history.
 
 Respond strictly in this format:
 {
   "response": <response>,
   "expense": [
     {
-      "name": <expense_name_1>,
-      "category": <expense_category_1>,
-      "price": <expense_price_1>
+        "name": <expense_name_1>,
+        "category": <expense_category_1>,
+        "price": <expense_price_1>,
+        "date_of_expense": <expense_data_1 or current_date>
     },
     {
-      "name": <expense_name_2>,
-      "category": <expense_category_2>,
-      "price": <expense_price_2>
+        "name": <expense_name_2>,
+        "category": <expense_category_2>,
+        "price": <expense_price_2>,
+        "date_of_expense": <expense_data_2 or current_date>
     }
 }
 
@@ -51,7 +59,6 @@ async def get_chat_response(
     )
 
     json_string = response.choices[0].message.content 
-    
     try:
         return json.loads(json_string)
     
