@@ -1,3 +1,4 @@
+from typing import List
 from psycopg import AsyncConnection
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -43,6 +44,24 @@ async def login_user(
     Authenticate user and return JWT access token with user information
     """
     return await handlers.login_user(conn, login_data)
+
+@router.post("/logout",
+    status_code=status.HTTP_200_OK,
+    responses={
+        status.HTTP_200_OK: {"description": "User logged out successfully, all tokens invalidated"},
+        status.HTTP_401_UNAUTHORIZED: {"description": "Unauthorized - invalid or missing token"},
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {"description": "Server error"},
+    },
+)
+async def logout_user(
+    current_user: dict = Depends(auth.get_current_user),
+    conn: AsyncConnection = Depends(get_async_session)
+):
+    """
+    Logout the current user by incrementing their token version.
+    This invalidates ALL tokens for this user across all devices.
+    """
+    return await handlers.logout_user(conn, current_user)
 
 @router.get("/me",
     status_code=status.HTTP_200_OK,
@@ -97,3 +116,19 @@ async def delete_user_account(
     Delete the current authenticated user's account permanently
     """
     return await handlers.delete_user(conn, current_user)
+
+@router.get("/all_users",
+    status_code=status.HTTP_200_OK,
+    response_model=List[schema.UserResponse],
+    responses={
+        status.HTTP_200_OK: {"description": "All users retrieved successfully"},
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {"description": "Database or unexpected server error"},
+    },
+)
+async def get_all_users(
+    conn: AsyncConnection = Depends(get_async_session)
+):
+    """
+    Get a list of all users in the database
+    """
+    return await handlers.get_all_users(conn)

@@ -58,12 +58,26 @@ async def database_setup():
         full_name VARCHAR(255),
         email VARCHAR(255),
         hashed_password VARCHAR(255),
+        token_version INTEGER DEFAULT 1 NOT NULL,
         created TIMESTAMPTZ DEFAULT NOW(),
         updated TIMESTAMPTZ DEFAULT NOW(),
 
         CONSTRAINT users_username_key UNIQUE (username),
         CONSTRAINT users_email_key UNIQUE (email)
     );
+    """
+    
+    check_token_version_column = """
+    SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'users' AND column_name = 'token_version'
+    );
+    """
+    
+    add_token_version_column = """
+    ALTER TABLE users 
+    ADD COLUMN token_version INTEGER DEFAULT 1 NOT NULL;
     """
 
     try:
@@ -78,6 +92,12 @@ async def database_setup():
                 print("Table 'users' created.")
             else:
                 print("Table 'users' already exists.")
+                await cur.execute(check_token_version_column)
+                has_token_version = await cur.fetchone()
+                if not has_token_version[0]:
+                    await cur.execute(add_token_version_column)
+                    await conn.commit()
+                    print("Column 'token_version' added to 'users' table.")
             
 
             await cur.execute(query)
