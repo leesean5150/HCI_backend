@@ -2,6 +2,7 @@ from fastapi import HTTPException, status
 from psycopg import AsyncConnection
 
 from . import schema
+from datetime import date
 
 UPDATABLE_FIELDS = {
     "name", "date_of_expense", "amount", 
@@ -119,6 +120,70 @@ async def create_expenditure(
         await conn.commit()
             
         return {**expenditure.model_dump(), **returned_data}
+
+    except HTTPException:
+        await conn.rollback()
+        raise
+        
+    except Exception as e:
+        await conn.rollback()
+        raise e
+
+async def create_bulk_expenditures(
+    current_user: dict,
+    expenditures: list[schema.ExpenditureModel],
+    conn: AsyncConnection
+):
+    """
+    Create multiple expenditures
+    """
+    if not expenditures:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No expenditures provided."
+        )
+    
+    query = """
+        INSERT INTO expenditure (
+            user_uuid,
+            name, 
+            date_of_expense, 
+            amount, 
+            category, 
+            notes, 
+            status
+        ) VALUES (
+            %s, %s, %s, %s, %s, %s, %s
+        )
+        RETURNING uuid, created_at;
+    """
+    
+    created_expenditures = []
+    
+    try:
+        async with conn.cursor() as cur:
+            for expenditure in expenditures:
+                values = (
+                    current_user['uuid'], 
+                    expenditure.name,
+                    expenditure.date_of_expense,
+                    expenditure.amount,
+                    expenditure.category,
+                    expenditure.notes,
+                    expenditure.status,
+                )
+                
+                await cur.execute(query, values)
+                returned_data = await cur.fetchone()
+                
+                created_expenditures.append({
+                    **expenditure.model_dump(), 
+                    **returned_data
+                })
+        
+        await conn.commit()
+        
+        return created_expenditures
 
     except HTTPException:
         await conn.rollback()
@@ -295,4 +360,37 @@ async def delete_expenditure_by_id(
 
     except Exception as e:
         await conn.rollback()
+        raise e
+    
+async def date_filter_expenditures(
+    start_date: date,
+    end_date: date,
+    current_user: dict,
+    conn: AsyncConnection
+):
+    """
+    Filters expenditures based on a date range for the current user.
+    """
+    if start_date > end_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Start date must be before or equal to end date."
+        )
+    
+    query = """
+        SELECT * FROM expenditure
+        WHERE date_of_expense BETWEEN %s AND %s
+        AND user_uuid = %s
+        ORDER BY date_of_expense DESC, created_at DESC
+    """
+    values = (start_date, end_date, current_user['uuid'])
+
+    try:
+        async with conn.cursor() as cur:
+            await cur.execute(query, values)
+            filtered_expenditures = await cur.fetchall()
+
+        return filtered_expenditures
+
+    except Exception as e:
         raise e
