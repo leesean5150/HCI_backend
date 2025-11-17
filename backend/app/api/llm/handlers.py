@@ -178,7 +178,6 @@ async def process_audio_to_expenditures(
             "message": "No expenses detected in the audio."
         }
     
-    # Convert LLM expense format to ExpenditureModel list
     expenditure_list = []
     for expense in expenses:
         try:
@@ -192,11 +191,10 @@ async def process_audio_to_expenditures(
             )
             expenditure_list.append(expenditure_data)
         except Exception as e:
-            # Log validation error but continue with other expenses
+
             print(f"Error validating expenditure: {str(e)}")
             continue
     
-    # Create all expenditures in bulk (single transaction)
     if not expenditure_list:
         return {
             "transcription": transcription_text,
