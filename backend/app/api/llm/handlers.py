@@ -14,6 +14,8 @@ from zoneinfo import ZoneInfo
 
 from llm.gpt import get_openai_client
 from . import schema
+from app.api.expenditure import handlers as expenditure_handlers
+from app.api.expenditure.schema import ExpenditureModel
 
 sgt_zone = ZoneInfo("Asia/Singapore") 
 now_in_sgt = datetime.now(sgt_zone)
@@ -123,7 +125,8 @@ async def get_audio_transcription(audio_file: UploadFile, client: OpenAI) -> dic
 
         response = client.audio.transcriptions.create(
             model="whisper-1",
-            file=(audio_file.filename, audio_bytes)
+            file=(audio_file.filename, audio_bytes),
+            language="en"  # Force English transcription
         )
 
         return {"transcription": response.text}
@@ -144,3 +147,72 @@ async def get_audio_transcription(audio_file: UploadFile, client: OpenAI) -> dic
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"OpenAI API error: {e.message}"
         )
+
+async def process_audio_to_expenditures(
+    audio_file: UploadFile,
+    current_user: dict,
+    conn,
+    client: OpenAI
+) -> dict:
+    """
+    Transcribes audio file, extracts expense information using LLM,
+    and creates expenditures in the database.
+    """
+    transcription_result = await get_audio_transcription(audio_file, client)
+    transcription_text = transcription_result["transcription"]
+    
+    chat_message = schema.ChatMessage(
+        role="user",
+        content=[schema.TextContentPart(type="text", text=transcription_text)]
+    )
+    chat_history = schema.TextChatModel(chat_history=[chat_message])
+    
+    llm_response = await get_chat_response(chat_history, client)
+    
+    expenses = llm_response.get("expense", [])
+    
+    if not expenses:
+        return {
+            "transcription": transcription_text,
+            "llm_response": llm_response.get("response", ""),
+            "expenditures_created": [],
+            "message": "No expenses detected in the audio."
+        }
+    
+    expenditure_list = []
+    for expense in expenses:
+        try:
+            expenditure_data = ExpenditureModel(
+                name=expense.get("name", "Unnamed Expense"),
+                date_of_expense=expense.get("date_of_expense", current_date_sgt),
+                amount=expense.get("price", 0.0),
+                category=expense.get("category"),
+                notes=f"Created from audio transcription: {transcription_text[:100]}...",
+                status="Pending"
+            )
+            expenditure_list.append(expenditure_data)
+        except Exception as e:
+
+            print(f"Error validating expenditure: {str(e)}")
+            continue
+    
+    if not expenditure_list:
+        return {
+            "transcription": transcription_text,
+            "llm_response": llm_response.get("response", ""),
+            "expenditures_created": [],
+            "message": "No valid expenses could be created from the audio."
+        }
+    
+    created_expenditures = await expenditure_handlers.create_bulk_expenditures(
+        current_user=current_user,
+        expenditures=expenditure_list,
+        conn=conn
+    )
+    
+    return {
+        "transcription": transcription_text,
+        "llm_response": llm_response.get("response", ""),
+        "expenditures_created": created_expenditures,
+        "total_created": len(created_expenditures)
+    }

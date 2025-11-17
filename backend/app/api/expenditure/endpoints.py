@@ -1,5 +1,6 @@
 from psycopg import AsyncConnection
 from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import date
 
 from db.postgres import get_async_session
 from app import auth
@@ -115,6 +116,37 @@ async def create_expenditure(
         raise HTTPException(
             status.HTTP_500_BAD_REQUEST,
             detail="Failed to get expenditures. Please try again in a while.",
+        )
+
+@router.post(
+    "/bulk",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        status.HTTP_201_CREATED: {"description": "Multiple expenditures created"},
+        status.HTTP_401_UNAUTHORIZED: {"description": "Unauthorized - invalid or missing token"},
+        status.HTTP_400_BAD_REQUEST: {"description": "Bad request or empty list"},
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {"description": "Database or unexpected server error"},
+    },
+)
+async def create_bulk_expenditures(
+    expenditures: list[schema.ExpenditureModel],
+    current_user: dict = Depends(auth.get_current_user),
+    conn: AsyncConnection = Depends(get_async_session)
+):
+    """
+    Create multiple expenditures for the authenticated user in a single transaction.
+    """
+    try:
+        response = await handlers.create_bulk_expenditures(current_user, expenditures, conn)
+        return response
+
+    except HTTPException as e:
+        raise e
+
+    except Exception as e:
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create bulk expenditures. Please try again in a while.",
         )
     
 @router.patch(
@@ -242,4 +274,31 @@ async def delete_expenditure_by_id(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Server failed to delete expenditure: {str(e)}. Please try again.",
+        )
+
+@router.get(
+    "/date_filter",
+    status_code=status.HTTP_200_OK,
+    responses={
+        status.HTTP_200_OK: {"description": "List of expenditures within date range"},
+        status.HTTP_400_BAD_REQUEST: {"description": "Bad request - invalid date range"},
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {"description": "Database or unexpected server error"},
+    },
+)
+async def date_filter_expenditures(start_date: date, end_date: date,
+    current_user: dict = Depends(auth.get_current_user),
+    conn: AsyncConnection = Depends(get_async_session)
+):
+    """
+    Filters expenditures based on a date range for the current user.
+    """
+    try: 
+        response = await handlers.date_filter_expenditures(start_date, end_date, current_user, conn)
+        return response
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to filter expenditures by date. Please try again in a while.",
         )
