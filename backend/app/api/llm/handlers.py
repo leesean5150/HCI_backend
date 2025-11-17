@@ -125,7 +125,8 @@ async def get_audio_transcription(audio_file: UploadFile, client: OpenAI) -> dic
 
         response = client.audio.transcriptions.create(
             model="whisper-1",
-            file=(audio_file.filename, audio_bytes)
+            file=(audio_file.filename, audio_bytes),
+            language="en"  # Force English transcription
         )
 
         return {"transcription": response.text}
