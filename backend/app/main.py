@@ -80,6 +80,59 @@ async def database_setup():
     ADD COLUMN token_version INTEGER DEFAULT 1 NOT NULL;
     """
 
+    # --- Web experiment tables --- #
+    query_webexp_users = """
+    SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_name = 'webexp_users'
+    );
+    """
+    create_webexp_users = """
+    CREATE TABLE webexp_users (
+        user_id VARCHAR(50) PRIMARY KEY,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    """
+
+    query_webexp_tasks = """
+    SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_name = 'webexp_tasks'
+    );
+    """
+    create_webexp_tasks = """
+    CREATE TABLE webexp_tasks (
+        task_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id VARCHAR(50) NOT NULL REFERENCES webexp_users(user_id) ON DELETE CASCADE,
+        task_number INT NOT NULL,
+        time_taken_seconds INT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    """
+
+    query_webexp_expenditure = """
+    SELECT EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_name = 'webexp_expenditure'
+    );
+    """
+    create_webexp_expenditure = """
+    CREATE TABLE webexp_expenditure (
+        uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        task_id UUID NOT NULL REFERENCES webexp_tasks(task_id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        date_of_expense DATE NOT NULL,
+        amount NUMERIC(10, 2) NOT NULL,
+        category VARCHAR(50),
+        notes TEXT,
+        status VARCHAR(20) DEFAULT 'Pending'
+    );
+    """
+
     try:
         conn = await AsyncConnection.connect(str(settings.DATABASE_URL), autocommit=True)
         async with conn.cursor() as cur:
@@ -108,6 +161,34 @@ async def database_setup():
                 print("Table 'expenditure' created.")
             else:
                 print("Table 'expenditure' already exists.")
+
+            # --- web experiment tables --- #
+            await cur.execute(query_webexp_users)
+            result = await cur.fetchone()
+            if not result[0]:
+                await cur.execute(create_webexp_users)
+                await conn.commit()
+                print("Table 'webexp_users' created.")
+            else:
+                print("Table 'webexp_users' already exists.")
+
+            await cur.execute(query_webexp_tasks)
+            result = await cur.fetchone()
+            if not result[0]:
+                await cur.execute(create_webexp_tasks)
+                await conn.commit()
+                print("Table 'webexp_tasks' created.")
+            else:
+                print("Table 'webexp_tasks' already exists.")
+
+            await cur.execute(query_webexp_expenditure)
+            result = await cur.fetchone()
+            if not result[0]:
+                await cur.execute(create_webexp_expenditure)
+                await conn.commit()
+                print("Table 'webexp_expenditure' created.")
+            else:
+                print("Table 'webexp_expenditure' already exists.")
                 
         await conn.close()
     except Exception as e:
