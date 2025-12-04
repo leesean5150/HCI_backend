@@ -41,19 +41,54 @@ async def create_task(task: schema.WebExpTaskCreate, conn: AsyncConnection):
 
 async def update_task_time(task_update: schema.WebExpTaskUpdateTime, conn: AsyncConnection):
     """
-    Update the time_taken_seconds for a task identified by user_id and task_number.
+    Update the time_taken_seconds for a task.
+    Requires task_id along with user_id and task_number for validation.
     """
     try:
         async with conn.cursor() as cur:
-            await cur.execute(
-                """
-                UPDATE webexp_tasks
-                SET time_taken_seconds = %s
-                WHERE user_id = %s AND task_number = %s
-                RETURNING task_id, user_id, task_number, time_taken_seconds;
-                """,
-                (task_update.time_taken_seconds, task_update.user_id, task_update.task_number)
-            )
+            # Validate that task_id matches user_id + task_number
+            if task_update.task_id and task_update.user_id and task_update.task_number is not None:
+                await cur.execute(
+                    """
+                    SELECT task_id FROM webexp_tasks 
+                    WHERE task_id = %s AND user_id = %s AND task_number = %s;
+                    """,
+                    (task_update.task_id, task_update.user_id, task_update.task_number)
+                )
+                validation = await cur.fetchone()
+                if not validation:
+                    raise HTTPException(
+                        status_code=404, 
+                        detail="Task not found or task_id does not match user_id and task_number"
+                    )
+                
+                # Update using task_id (most specific)
+                await cur.execute(
+                    """
+                    UPDATE webexp_tasks
+                    SET time_taken_seconds = %s
+                    WHERE task_id = %s
+                    RETURNING task_id, user_id, task_number, time_taken_seconds;
+                    """,
+                    (task_update.time_taken_seconds, task_update.task_id)
+                )
+            elif task_update.user_id and task_update.task_number is not None:
+                # Fallback: use user_id + task_number (backward compatible)
+                await cur.execute(
+                    """
+                    UPDATE webexp_tasks
+                    SET time_taken_seconds = %s
+                    WHERE user_id = %s AND task_number = %s
+                    RETURNING task_id, user_id, task_number, time_taken_seconds;
+                    """,
+                    (task_update.time_taken_seconds, task_update.user_id, task_update.task_number)
+                )
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Either (task_id + user_id + task_number) OR (user_id + task_number) must be provided"
+                )
+            
             updated = await cur.fetchone()
             if not updated:
                 raise HTTPException(status_code=404, detail="Task not found")
@@ -123,24 +158,36 @@ async def create_expenditure(exp: schema.WebExpExpenditureCreate, conn: AsyncCon
         raise HTTPException(status_code=400, detail=str(e))
 
 
-async def create_bulk_expenditures(expenditures: list[schema.WebExpExpenditureBulkItem], user_id: str, task_number: int, conn: AsyncConnection):
+async def create_bulk_expenditures(
+    expenditures: list[schema.WebExpExpenditureBulkItem], 
+    task_id: str,
+    user_id: str, 
+    task_number: int,
+    conn: AsyncConnection
+):
     """
     Create multiple expenditures for a task in a single transaction.
+    Requires task_id along with user_id and task_number for validation.
     """
     try:
         created_exps = []
         async with conn.cursor() as cur:
-            # First, find the task_id based on user_id and task_number
+            # Validate that task_id matches user_id + task_number
             await cur.execute(
-                "SELECT task_id FROM webexp_tasks WHERE user_id = %s AND task_number = %s;",
-                (user_id, task_number)
+                """
+                SELECT task_id FROM webexp_tasks 
+                WHERE task_id = %s AND user_id = %s AND task_number = %s;
+                """,
+                (task_id, user_id, task_number)
             )
-            task_row = await cur.fetchone()
-            if not task_row:
-                raise HTTPException(status_code=404, detail="Task not found for given user_id and task_number")
+            validation = await cur.fetchone()
+            if not validation:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Task not found or task_id does not match user_id and task_number"
+                )
             
-            task_id = str(task_row["task_id"])
-            
+            # Now create all expenditures with the validated task_id
             for exp in expenditures:
                 exp_uuid = str(uuid.uuid4())
                 await cur.execute(

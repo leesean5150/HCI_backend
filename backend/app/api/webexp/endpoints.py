@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from . import schema, handlers
 from psycopg import AsyncConnection
 from db.postgres import get_async_session
-from typing import List
+from typing import List, Optional
 
 router = APIRouter()
 
@@ -52,6 +52,9 @@ async def update_task_time_endpoint(
     task_update: schema.WebExpTaskUpdateTime,
     conn: AsyncConnection = Depends(get_async_session)
 ):
+    """
+    Update task time. Requires task_id along with user_id and task_number for validation.
+    """
     try:
         return await handlers.update_task_time(task_update, conn)
     except HTTPException as e:
@@ -102,15 +105,17 @@ async def create_webexp_expenditure(
 )
 async def create_bulk_expenditures_endpoint(
     bulk: list[schema.WebExpExpenditureBulkItem],
-    user_id: str,
-    task_number: int,
+    task_id: str = Query(..., description="Task ID"),
+    user_id: str = Query(..., description="User ID"),
+    task_number: int = Query(..., description="Task number"),
     conn: AsyncConnection = Depends(get_async_session)
 ):
     """
-    Create multiple expenditures in one request for a given user and task number.
+    Create multiple expenditures in one request.
+    Requires task_id along with user_id and task_number for validation.
     """
     try:
-        return await handlers.create_bulk_expenditures(bulk, user_id, task_number, conn)
+        return await handlers.create_bulk_expenditures(bulk, task_id, user_id, task_number, conn)
     except HTTPException as e:
         raise e
     except Exception:
@@ -152,3 +157,10 @@ async def get_users_by_task_endpoint(task_number: int, conn: AsyncConnection = D
         return await handlers.get_users_by_task(task_number, conn)
     except HTTPException as e:
         raise e
+
+@router.get(
+    "/health",
+    status_code=200,
+)
+async def health_check():
+    return {"status": "ok"}

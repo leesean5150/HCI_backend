@@ -24,8 +24,10 @@ class WebExpTaskCreate(BaseModel):
     time_taken_seconds: Optional[int] = None
 
 class WebExpTaskUpdateTime(BaseModel):
-    user_id: str
-    task_number: int
+    # Support both task_id OR user_id + task_number
+    task_id: Optional[str] = None
+    user_id: Optional[str] = None
+    task_number: Optional[int] = None
     time_taken_seconds: int
 
 # Expenditures
@@ -58,6 +60,7 @@ class WebExpExpenditureBulkItem(BaseModel):
     status: Optional[str] = None
 
     
+
 
 
 
