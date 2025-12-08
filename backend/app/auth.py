@@ -98,7 +98,7 @@ async def get_current_user(
     try:
         async with conn.cursor() as cur:
             query = """
-            SELECT uuid, username, full_name, email, token_version, created, updated
+            SELECT uuid, username, full_name, email, token_version, monthly_budget, created, updated
             FROM users
             WHERE username = %s AND email IS NOT NULL AND hashed_password IS NOT NULL;
             """

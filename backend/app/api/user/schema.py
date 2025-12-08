@@ -24,8 +24,12 @@ class UserLoginRequest(BaseModel):
 class UserResponse(UserBase):
     uuid: UUID
     email: EmailStr
+    monthly_budget: Optional[float] = 0.00
     created: Optional[datetime] = None
     updated: Optional[datetime] = None
+    
+class BudgetUpdateRequest(BaseModel):
+    monthly_budget: float = Field(ge=0, description="Monthly budget limit (must be non-negative)")
 
 # Schema for JWT token response
 class TokenResponse(BaseModel):

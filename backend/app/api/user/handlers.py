@@ -15,7 +15,7 @@ async def create_user(conn, user_data: schema.UserRegisterRequest):
     insert_query = """
     INSERT INTO users (username, full_name, email, hashed_password)
     VALUES(%s, %s, %s, %s)
-    RETURNING uuid, username, full_name, email, created, updated;
+    RETURNING uuid, username, full_name, email, monthly_budget, created, updated;
     """
     
     try:
@@ -64,7 +64,7 @@ async def login_user(conn, login_data: schema.UserLoginRequest):
     try:
         async with conn.cursor() as cur:
             query = """
-            SELECT uuid, username, full_name, email, hashed_password, token_version, created, updated
+            SELECT uuid, username, full_name, email, hashed_password, token_version, monthly_budget, created, updated
             FROM users
             WHERE username = %s AND email IS NOT NULL AND hashed_password IS NOT NULL;
             """
@@ -180,7 +180,7 @@ async def update_user(conn, current_user: dict, update_data: schema.UserUpdateRe
             UPDATE users
             SET {', '.join(update_parts)}
             WHERE username = %s
-            RETURNING uuid, username, full_name, email, created, updated;
+            RETURNING uuid, username, full_name, email, monthly_budget, created, updated;
             """
             
             await cur.execute(update_query, params)
@@ -259,9 +259,79 @@ async def get_current_user_profile(current_user: dict):
         username=current_user['username'],
         full_name=current_user['full_name'],
         email=current_user['email'],
+        monthly_budget=float(current_user.get('monthly_budget', 0.00)),
         created=current_user['created'],
         updated=current_user['updated']
     )
+    
+async def get_user_budget(current_user: dict, conn: AsyncConnection):
+    """Get monthly budget of the current user from database"""
+    try:
+        async with conn.cursor() as cur:
+            query = """
+            SELECT username, monthly_budget
+            FROM users
+            WHERE username = %s;
+            """
+            await cur.execute(query, (current_user['username'],))
+            result = await cur.fetchone()
+            
+            if not result:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found"
+                )
+            
+            return {
+                "username": result['username'],
+                "monthly_budget": result['monthly_budget']
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error: {str(e)}"
+        )
+    
+async def update_user_budget(
+    conn: AsyncConnection,
+    current_user: dict,
+    budget_data: schema.BudgetUpdateRequest
+):
+    """Update the current user's monthly budget"""
+    try:
+        async with conn.cursor() as cur:
+            update_query = """
+            UPDATE users
+            SET monthly_budget = %s, updated = NOW()
+            WHERE username = %s
+            RETURNING uuid, username, full_name, email, monthly_budget, created, updated;
+            """
+            
+            await cur.execute(
+                update_query,
+                (budget_data.monthly_budget, current_user['username'])
+            )
+            
+            updated_user = await cur.fetchone()
+            
+            if not updated_user:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found"
+                )
+            
+            await conn.commit()
+            return schema.UserResponse(**updated_user)
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error: {str(e)}"
+        )
 
 async def get_all_users(conn):
     """
@@ -270,7 +340,7 @@ async def get_all_users(conn):
     try:
         async with conn.cursor() as cur:
             query = """
-            SELECT uuid, username, full_name, email, created, updated
+            SELECT uuid, username, full_name, email, monthly_budget, created, updated
             FROM users;
             """
             await cur.execute(query)

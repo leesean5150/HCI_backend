@@ -58,6 +58,7 @@ async def database_setup():
         full_name VARCHAR(255),
         email VARCHAR(255),
         hashed_password VARCHAR(255),
+        monthly_budget NUMERIC(10, 2) DEFAULT 0.00,
         token_version INTEGER DEFAULT 1 NOT NULL,
         created TIMESTAMPTZ DEFAULT NOW(),
         updated TIMESTAMPTZ DEFAULT NOW(),

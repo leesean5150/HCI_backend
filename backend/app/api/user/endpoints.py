@@ -117,6 +117,44 @@ async def delete_user_account(
     """
     return await handlers.delete_user(conn, current_user)
 
+@router.get("/budget",
+    status_code=status.HTTP_200_OK,
+    response_model=dict,
+    responses={
+        status.HTTP_200_OK: {"description": "Monthly budget retrieved successfully"},
+        status.HTTP_401_UNAUTHORIZED: {"description": "Unauthorized - invalid or missing token"},
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {"description": "Server error"},
+    },
+)
+async def get_budget(
+    current_user: dict = Depends(auth.get_current_user),
+    conn: AsyncConnection = Depends(get_async_session)  
+):
+    """
+    Get the current user's monthly budget limit
+    """
+    return await handlers.get_user_budget(current_user, conn)
+
+@router.put("/budget",
+    status_code=status.HTTP_200_OK,
+    response_model=schema.UserResponse,
+    responses={
+        status.HTTP_200_OK: {"description": "Monthly budget updated successfully"},
+        status.HTTP_400_BAD_REQUEST: {"description": "Bad request - invalid budget value"},
+        status.HTTP_401_UNAUTHORIZED: {"description": "Unauthorized - invalid or missing token"},
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {"description": "Database or unexpected server error"},
+    },
+)
+async def update_budget(
+    budget_data: schema.BudgetUpdateRequest,
+    current_user: dict = Depends(auth.get_current_user),
+    conn: AsyncConnection = Depends(get_async_session)
+):
+    """
+    Update the current user's monthly budget limit
+    """
+    return await handlers.update_user_budget(conn, current_user, budget_data)
+
 @router.get("/all_users",
     status_code=status.HTTP_200_OK,
     response_model=List[schema.UserResponse],
