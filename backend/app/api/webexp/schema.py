@@ -17,11 +17,15 @@ class WebExpTask(BaseModel):
     user_id: str
     task_number: int
     time_taken_seconds: Optional[int] = None
+    question1: Optional[int] = None
+    question2: Optional[int] = None
+    device_type: Optional[str] = None  # "mobile" or "desktop"
 
 class WebExpTaskCreate(BaseModel):
     user_id: str
     task_number: int
     time_taken_seconds: Optional[int] = None
+    device_type: Optional[str] = None  # "mobile" or "desktop"
 
 class WebExpTaskUpdateTime(BaseModel):
     # Support both task_id OR user_id + task_number
@@ -29,6 +33,14 @@ class WebExpTaskUpdateTime(BaseModel):
     user_id: Optional[str] = None
     task_number: Optional[int] = None
     time_taken_seconds: int
+
+class WebExpTaskUpdateQuestions(BaseModel):
+    # Support both task_id OR user_id + task_number
+    task_id: Optional[str] = None
+    user_id: Optional[str] = None
+    task_number: Optional[int] = None
+    question1: int
+    question2: int
 
 # Expenditures
 class WebExpExpenditure(BaseModel):

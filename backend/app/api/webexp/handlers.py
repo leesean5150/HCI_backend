@@ -20,11 +20,11 @@ async def create_task(task: schema.WebExpTaskCreate, conn: AsyncConnection):
             # Now create the task
             await cur.execute(
                 """
-                INSERT INTO webexp_tasks (task_id, user_id, task_number, time_taken_seconds)
-                VALUES (%s, %s, %s, %s)
-                RETURNING task_id, user_id, task_number, time_taken_seconds;
+                INSERT INTO webexp_tasks (task_id, user_id, task_number, time_taken_seconds, device_type)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING task_id, user_id, task_number, time_taken_seconds, question1, question2, device_type;
                 """,
-                (task_id, task.user_id, task.task_number, task.time_taken_seconds)
+                (task_id, task.user_id, task.task_number, task.time_taken_seconds, task.device_type)
             )
             created = await cur.fetchone()
             await conn.commit()  # Commit the transaction
@@ -33,6 +33,9 @@ async def create_task(task: schema.WebExpTaskCreate, conn: AsyncConnection):
                 "user_id": created["user_id"],
                 "task_number": created["task_number"],
                 "time_taken_seconds": created["time_taken_seconds"],
+                "question1": created["question1"],
+                "question2": created["question2"],
+                "device_type": created["device_type"],
             }
     except Exception as e:
         print(f"Error creating task: {e}")  # Log for debugging
@@ -68,7 +71,7 @@ async def update_task_time(task_update: schema.WebExpTaskUpdateTime, conn: Async
                     UPDATE webexp_tasks
                     SET time_taken_seconds = %s
                     WHERE task_id = %s
-                    RETURNING task_id, user_id, task_number, time_taken_seconds;
+                    RETURNING task_id, user_id, task_number, time_taken_seconds, question1, question2, device_type;
                     """,
                     (task_update.time_taken_seconds, task_update.task_id)
                 )
@@ -79,7 +82,7 @@ async def update_task_time(task_update: schema.WebExpTaskUpdateTime, conn: Async
                     UPDATE webexp_tasks
                     SET time_taken_seconds = %s
                     WHERE user_id = %s AND task_number = %s
-                    RETURNING task_id, user_id, task_number, time_taken_seconds;
+                    RETURNING task_id, user_id, task_number, time_taken_seconds, question1, question2, device_type;
                     """,
                     (task_update.time_taken_seconds, task_update.user_id, task_update.task_number)
                 )
@@ -98,7 +101,10 @@ async def update_task_time(task_update: schema.WebExpTaskUpdateTime, conn: Async
                 "task_id": str(updated["task_id"]),
                 "user_id": updated["user_id"],
                 "task_number": updated["task_number"],
-                "time_taken_seconds": updated["time_taken_seconds"]
+                "time_taken_seconds": updated["time_taken_seconds"],
+                "question1": updated["question1"],
+                "question2": updated["question2"],
+                "device_type": updated["device_type"]
             }
     except HTTPException:
         raise
@@ -232,10 +238,19 @@ async def create_bulk_expenditures(
 async def get_user_with_tasks(user_id: str, conn: AsyncConnection):
     try:
         async with conn.cursor() as cur:
-            # Fetch all tasks for this user
+            # First check if user exists
+            await cur.execute(
+                "SELECT user_id FROM webexp_users WHERE user_id = %s;",
+                (user_id,)
+            )
+            user_row = await cur.fetchone()
+            if not user_row:
+                raise HTTPException(status_code=404, detail="User not found")
+            
+            # Fetch all tasks for this user (including question1, question2, and device_type)
             await cur.execute(
                 """
-                SELECT task_id, user_id, task_number, time_taken_seconds
+                SELECT task_id, user_id, task_number, time_taken_seconds, question1, question2, device_type
                 FROM webexp_tasks
                 WHERE user_id = %s
                 """,
@@ -251,6 +266,9 @@ async def get_user_with_tasks(user_id: str, conn: AsyncConnection):
                 t_user_id = task["user_id"]
                 t_task_number = task["task_number"]
                 t_time_taken = task["time_taken_seconds"]
+                t_question1 = task["question1"]
+                t_question2 = task["question2"]
+                t_device_type = task["device_type"]
 
                 # Fetch expenditures for this task
                 await cur.execute(
@@ -282,6 +300,9 @@ async def get_user_with_tasks(user_id: str, conn: AsyncConnection):
                         user_id=t_user_id,
                         task_number=t_task_number,
                         time_taken_seconds=t_time_taken,
+                        question1=t_question1,
+                        question2=t_question2,
+                        device_type=t_device_type,
                         expenditures=expenditures
                     )
                 )
@@ -301,10 +322,10 @@ async def get_user_with_tasks(user_id: str, conn: AsyncConnection):
 async def get_users_by_task(task_number: int, conn: AsyncConnection):
     try:
         async with conn.cursor() as cur:
-            # Fetch all tasks with this task_number
+            # Fetch all tasks with this task_number (including question1, question2, and device_type)
             await cur.execute(
                 """
-                SELECT task_id, user_id, task_number, time_taken_seconds
+                SELECT task_id, user_id, task_number, time_taken_seconds, question1, question2, device_type
                 FROM webexp_tasks
                 WHERE task_number = %s
                 """,
@@ -321,6 +342,9 @@ async def get_users_by_task(task_number: int, conn: AsyncConnection):
                 t_user_id = task["user_id"]
                 t_task_number = task["task_number"]
                 t_time_taken = task["time_taken_seconds"]
+                t_question1 = task["question1"]
+                t_question2 = task["question2"]
+                t_device_type = task["device_type"]
 
                 # Fetch expenditures for this task
                 await cur.execute(
@@ -351,11 +375,17 @@ async def get_users_by_task(task_number: int, conn: AsyncConnection):
                     user_id=t_user_id,
                     task_number=t_task_number,
                     time_taken_seconds=t_time_taken,
+                    question1=t_question1,
+                    question2=t_question2,
+                    device_type=t_device_type,
                     expenditures=expenditures
                 )
 
                 if t_user_id not in users_dict:
-                    users_dict[t_user_id] = schema.WebExpUserOut(user_id=t_user_id, tasks=[task_out])
+                    users_dict[t_user_id] = schema.WebExpUserOut(
+                        user_id=t_user_id,
+                        tasks=[task_out]
+                    )
                 else:
                     users_dict[t_user_id].tasks.append(task_out)
 
@@ -365,3 +395,75 @@ async def get_users_by_task(task_number: int, conn: AsyncConnection):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Update task questions ---
+async def update_task_questions(update: schema.WebExpTaskUpdateQuestions, conn: AsyncConnection):
+    """
+    Update question1 and question2 for a task.
+    Both questions must be provided and must be between 1 and 4.
+    Requires task_id along with user_id and task_number for validation.
+    """
+    try:
+        async with conn.cursor() as cur:
+            # Validate that task_id matches user_id + task_number
+            if update.task_id and update.user_id and update.task_number is not None:
+                await cur.execute(
+                    """
+                    SELECT task_id FROM webexp_tasks 
+                    WHERE task_id = %s AND user_id = %s AND task_number = %s;
+                    """,
+                    (update.task_id, update.user_id, update.task_number)
+                )
+                validation = await cur.fetchone()
+                if not validation:
+                    raise HTTPException(
+                        status_code=404, 
+                        detail="Task not found or task_id does not match user_id and task_number"
+                    )
+                
+                # Update using task_id (most specific)
+                await cur.execute(
+                    """
+                    UPDATE webexp_tasks
+                    SET question1 = %s, question2 = %s
+                    WHERE task_id = %s
+                    RETURNING task_id, user_id, task_number, time_taken_seconds, question1, question2, device_type;
+                    """,
+                    (update.question1, update.question2, update.task_id)
+                )
+            elif update.user_id and update.task_number is not None:
+                # Fallback: use user_id + task_number (backward compatible)
+                await cur.execute(
+                    """
+                    UPDATE webexp_tasks
+                    SET question1 = %s, question2 = %s
+                    WHERE user_id = %s AND task_number = %s
+                    RETURNING task_id, user_id, task_number, time_taken_seconds, question1, question2, device_type;
+                    """,
+                    (update.question1, update.question2, update.user_id, update.task_number)
+                )
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Either (task_id + user_id + task_number) OR (user_id + task_number) must be provided"
+                )
+            
+            updated = await cur.fetchone()
+            if not updated:
+                raise HTTPException(status_code=404, detail="Task not found")
+            
+            await conn.commit()
+            return {
+                "task_id": str(updated["task_id"]),
+                "user_id": updated["user_id"],
+                "task_number": updated["task_number"],
+                "time_taken_seconds": updated["time_taken_seconds"],
+                "question1": updated["question1"],
+                "question2": updated["question2"],
+                "device_type": updated["device_type"]
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))

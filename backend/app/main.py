@@ -109,10 +109,13 @@ async def database_setup():
         user_id VARCHAR(50) NOT NULL REFERENCES webexp_users(user_id) ON DELETE CASCADE,
         task_number INT NOT NULL,
         time_taken_seconds INT,
+        question1 INT,
+        question2 INT,
+        device_type VARCHAR(20),
         created_at TIMESTAMPTZ DEFAULT NOW()
     );
     """
-
+    
     query_webexp_expenditure = """
     SELECT EXISTS (
         SELECT 1

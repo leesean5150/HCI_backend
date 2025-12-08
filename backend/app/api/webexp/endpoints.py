@@ -158,6 +158,37 @@ async def get_users_by_task_endpoint(task_number: int, conn: AsyncConnection = D
     except HTTPException as e:
         raise e
 
+@router.put(
+    "/tasks/questions/",
+    status_code=status.HTTP_200_OK,
+    response_model=schema.WebExpTask,
+    responses={
+        status.HTTP_200_OK: {"description": "Questions updated successfully"},
+        status.HTTP_400_BAD_REQUEST: {"description": "Bad request - questions must be 1-4"},
+        status.HTTP_404_NOT_FOUND: {"description": "Task not found"},
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {"description": "Server error"},
+    },
+)
+async def update_task_questions_endpoint(
+    update: schema.WebExpTaskUpdateQuestions,
+    conn: AsyncConnection = Depends(get_async_session)
+):
+    """
+    Update question1 and question2 for a task.
+    Both questions must be provided and must be between 1 and 4.
+    Requires task_id along with user_id and task_number for validation.
+    """
+    try:
+        return await handlers.update_task_questions(update, conn)
+    except HTTPException as e:
+        raise e
+    except Exception:
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update questions. Please try again later."
+        )
+
+
 @router.get(
     "/health",
     status_code=200,
