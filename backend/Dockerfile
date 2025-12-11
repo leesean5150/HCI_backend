@@ -35,4 +35,8 @@ RUN chown -R $USERNAME:$USERNAME $HOME
 
 USER $USERNAME
 
+#For cloud deployment
+# CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+
+#For local use
 CMD ["uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]

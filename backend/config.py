@@ -9,8 +9,12 @@ class Settings(BaseSettings):
     """
     POSTGRES_USER: str
     POSTGRES_PASSWORD: str
+    # For local running
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int 
+    # For gcloud deployment
+    # POSTGRES_HOST: Optional[str] = None
+    # POSTGRES_PORT: Optional[int] = None
     POSTGRES_DB: str
     
     # JWT Settings for authentication
@@ -18,8 +22,13 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str 
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int 
     
-    DATABASE_URL: Optional[PostgresDsn] = None
+    # DATABASE_URL: Optional[PostgresDsn] = None
+    DATABASE_URL: Optional[str] = None
     # OPENAI_API: str
+    # For webexp authentication - can be chosen by the person deploying
+    WEBEXP_API_KEY: str
+    # For gcloud deployment
+    # CLOUD_SQL_CONNECTION_NAME:str
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -35,6 +44,17 @@ class Settings(BaseSettings):
             return v
 
         data = info.data
+
+        #For gcloud deployment
+        # Detect if running in Cloud Run with Cloud SQL
+        # cloud_sql_instance = "talkcents-backend:asia-southeast1:my-postgres"
+        # if cloud_sql_instance:
+        #     return (
+        #         f"user={data.get('POSTGRES_USER')} "
+        #         f"password={data.get('POSTGRES_PASSWORD')} "
+        #         f"dbname={data.get('POSTGRES_DB')} "
+        #         f"host=/cloudsql/{cloud_sql_instance}"
+        #     )
     
         port_str = str(data.get('POSTGRES_PORT'))
 
